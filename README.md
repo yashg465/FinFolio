@@ -53,6 +53,7 @@ The Docker commands are provided for deployment and have not been executed in th
 - `POST /api/signup/verify`: checks the demo email OTP.
 - `POST /api/demo-signup`: consumes a verified challenge, reserves a unique username, and creates a browser session; not real email verification.
 - `GET /api/profiles?username=...`: searches all profiles by username, including profiles without projects.
+- `POST /api/logout`: revokes the current server session and clears the browser session cookie. Accounts, projects, files, and other sessions are preserved.
 - `PATCH /api/profile`: edits only the current session's profile.
 - `POST /api/projects`: creates a project owned by the current session.
 - `POST /api/projects/:id/like`: toggles a current user's like.
@@ -62,7 +63,7 @@ Writes require JSON and reject mismatched browser origins. Input lengths and res
 
 ## Before production
 
-Replace demo verification with real email OTP and rate limits, add login/recovery/logout, use a transactional database, move uploads to scanned object storage, reporting/moderation, account deletion, and privacy controls. Set up monitoring, backups, abuse controls, and HTTPS. Only share material you own and can disclose. Fonts optionally load from Google Fonts with system fallbacks. Sample content is not investment advice.
+Replace demo verification with real email OTP and rate limits, add returning-user login/recovery, use a transactional database, move uploads to scanned object storage, reporting/moderation, account deletion, and privacy controls. Set up monitoring, backups, abuse controls, and HTTPS. Only share material you own and can disclose. Fonts optionally load from Google Fonts with system fallbacks. Sample content is not investment advice.
 
 ## Supporting files and the dark UI
 
@@ -85,3 +86,9 @@ Usernames are unique across the server, stored in lowercase, and accept 3–30 A
 Resource links show the full destination URL directly below the **Open linked resource** button, before the user clicks it. The visible destination is the supplied URL; an external site's subsequent redirects are outside FinFolio's control.
 
 The email challenge expires after ten minutes or a server restart, is single-use for registration, and allows five OTP attempts. This is explicitly a demo with the fixed email code `123456`, not a production email verification service. No mobile number or mobile OTP is used.
+
+## Testing multiple accounts
+
+Open **My portfolio → Log out**. The server revokes the current session, the cookie is cleared, and email signup opens so you can register another test email and a new unique username. The previous profile and its work stay saved and remain searchable. Refreshing or replaying the old cookie does not restore the logged-out session.
+
+Returning-user login is not implemented yet. After logout, you cannot sign back into that demo account to edit it; use a new username for each test account. The demo email OTP is still `123456`.

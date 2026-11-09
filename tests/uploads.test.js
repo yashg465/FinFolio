@@ -35,5 +35,14 @@ let response=await request('/api/projects','POST',{},false);assert.equal(respons
  for(const files of [Array(6).fill(input.files[0]),[{name:'bad.bin',data:'not-base64!'}],[{name:'huge.bin',data:Buffer.alloc(8*1024*1024+1).toString('base64')}]]){response=await request('/api/projects','POST',{...input,files});assert.equal(response.status,400);}
  response=await request('/resources/00000000-0000-0000-0000-000000000000');assert.equal(response.status,404);
  await stop();await start();response=await request('/api/state');const state=await response.json();assert.equal(state.projects[0].resources.length,3);response=await request('/resources/'+project.resources[0].id);assert.equal(response.status,200);
+ const oldCookie=cookie;response=await request('/api/logout','POST',{});assert.equal(response.status,200);assert.match(response.headers.get('set-cookie'),/Max-Age=0/);
+ response=await request('/api/state');assert.equal((await response.json()).user,null);
+ response=await request('/api/profile','PATCH',{name:'Unauthorized',role:'Test'});assert.equal(response.status,401);
+ response=await request('/api/profiles/upload_tester');assert.equal(response.status,200);assert.equal((await response.json()).projects.length,1);
+ const third=await request('/api/signup/start','POST',{email:'third@example.com'}).then(r=>r.json());await request('/api/signup/verify','POST',{challengeId:third.challengeId,emailCode:'123456'});
+ response=await request('/api/demo-signup','POST',{challengeId:third.challengeId,name:'Third tester',username:'third_user'});assert.equal(response.status,201);cookie=response.headers.get('set-cookie').split(';')[0];
+ response=await request('/api/state');assert.equal((await response.json()).user.username,'third_user');
+ cookie=oldCookie;await stop();await start();response=await request('/api/state');assert.equal((await response.json()).user,null);
+ response=await request('/api/logout','POST',{});assert.equal(response.status,200);
  }finally{await stop();await rm(dir,{recursive:true,force:true});}
 });

@@ -57,6 +57,11 @@ const server=http.createServer(async(req,res)=>{try{
    const origin=req.headers.origin;if(origin&&origin!==`${req.headers['x-forwarded-proto']==='https'?'https':'http'}://${req.headers.host}`)return json(res,403,{error:'Cross-origin request rejected'});
    if(!req.headers['content-type']?.startsWith('application/json'))return json(res,415,{error:'JSON required'});
   }
+  if(pathname==='/api/logout'&&req.method==='POST'){
+   if(session){db.sessions=db.sessions.filter(s=>s!==session);await persist();}
+   res.setHeader('Set-Cookie',`finfolio_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${process.env.NODE_ENV==='production'?'; Secure':''}`);
+   return json(res,200,{loggedOut:true});
+  }
   if(pathname==='/api/state'&&req.method==='GET')return json(res,200,{user:user?publicUser(user):null,projects:db.projects.map(decorate),likes:user?db.projects.filter(p=>p.likedBy.includes(user.id)).map(p=>p.id):[]});
   if(pathname==='/api/profiles'&&req.method==='GET'){
    const query=(url.searchParams.get('username')||'').trim().replace(/^@/,'').toLowerCase().slice(0,30);
