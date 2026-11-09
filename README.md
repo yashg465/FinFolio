@@ -16,7 +16,7 @@ The app and API use port 3000, or `PORT`. `DATA_DIR` selects persistent storage 
 
 ## Test the app
 
-1. Create a demo profile. Use fictional mobile/email details and `123456` for both demo OTP fields. No SMS/email is sent, and contact details are not stored.
+1. Create a demo profile. Enter a test email, use `123456` for the email demo OTP, then enter your name and choose a unique username. No mobile number is requested. No email is sent; the email is held only in a temporary in-memory challenge and is not stored in the database.
 2. Edit your name/headline and add a project with up to five supporting files and an optional HTTP/HTTPS resource link.
 3. Preview your portfolio and copy its profile link. Open that URL in a separate browser to verify public viewing. Project share links work across browsers too.
 4. The originating browser retains edit access through an HttpOnly, SameSite session cookie for seven days. There is no returning-user login or recovery yet; losing that session means losing edit access. Do not use this demo for real accounts or confidential material.
@@ -49,17 +49,20 @@ The Docker commands are provided for deployment and have not been executed in th
 ## API
 
 - `GET /api/state`: public projects and current session's profile/likes.
-- `POST /api/demo-signup`: creates a demo identity and browser session; not real identity verification.
+- `POST /api/signup/start`: starts a short-lived email demo challenge.
+- `POST /api/signup/verify`: checks the demo email OTP.
+- `POST /api/demo-signup`: consumes a verified challenge, reserves a unique username, and creates a browser session; not real email verification.
+- `GET /api/profiles?username=...`: searches all profiles by username, including profiles without projects.
 - `PATCH /api/profile`: edits only the current session's profile.
 - `POST /api/projects`: creates a project owned by the current session.
 - `POST /api/projects/:id/like`: toggles a current user's like.
-- `GET /api/profiles/:id`: public profile and its projects.
+- `GET /api/profiles/:idOrUsername`: public profile and its projects. Existing ID-based links remain supported.
 
 Writes require JSON and reject mismatched browser origins. Input lengths and resource link schemes are validated server-side. Session cookies are HttpOnly, SameSite=Lax, and Secure in production. This is a test implementation, not production-ready authentication.
 
 ## Before production
 
-Replace demo verification with real SMS/email OTP and rate limits, add login/recovery/logout, use a transactional database, move uploads to scanned object storage, reporting/moderation, account deletion, and privacy controls. Set up monitoring, backups, abuse controls, and HTTPS. Only share material you own and can disclose. Fonts optionally load from Google Fonts with system fallbacks. Sample content is not investment advice.
+Replace demo verification with real email OTP and rate limits, add login/recovery/logout, use a transactional database, move uploads to scanned object storage, reporting/moderation, account deletion, and privacy controls. Set up monitoring, backups, abuse controls, and HTTPS. Only share material you own and can disclose. Fonts optionally load from Google Fonts with system fallbacks. Sample content is not investment advice.
 
 ## Supporting files and the dark UI
 
@@ -72,3 +75,13 @@ A **Supporting files** section appears on each article and portfolio, including 
 The black theme includes a longer landing page, swipeable profile and project rails, navigation arrows, search, category filters, and responsive mobile layouts. Swipe horizontally on a touch device or use the arrow buttons with a mouse/keyboard.
 
 `npm test` exercises uploads, limits, safe HTML download handling, unauthorized writes, byte-for-byte image retrieval, and persistence across a server restart using isolated temporary data. Browser checks additionally covered file selection/removal, publishing, portfolio supporting files, full/small/back article controls, mobile filtering/search, and carousel navigation.
+
+## Usernames and profile search
+
+Use **Search profiles** in the top navigation or **Search @username** beside the profile cards. Search accepts partial usernames and an optional leading `@`, ignores case, and returns up to 30 matches with exact matches first. It searches registered accounts, including accounts with no projects. Sample profiles are illustrative and are not registered accounts.
+
+Usernames are unique across the server, stored in lowercase, and accept 3–30 ASCII letters, numbers, or underscores. They are chosen after the email demo OTP step. Duplicate names show an inline error without losing the form. Usernames are currently fixed after registration; display names and headlines remain editable. Existing accounts receive deterministic unique usernames on startup without losing projects or sessions. Profiles show `@username`, and new copied profile links use it; older ID links still work.
+
+Resource links show the full destination URL directly below the **Open linked resource** button, before the user clicks it. The visible destination is the supplied URL; an external site's subsequent redirects are outside FinFolio's control.
+
+The email challenge expires after ten minutes or a server restart, is single-use for registration, and allows five OTP attempts. This is explicitly a demo with the fixed email code `123456`, not a production email verification service. No mobile number or mobile OTP is used.

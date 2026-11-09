@@ -11,9 +11,13 @@ function persist() { const snapshot=JSON.stringify(db); writes=writes.then(async
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));}
 async function body(req,limit=20000){const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>limit)throw Object.assign(Error('Request too large'),{status:413});chunks.push(chunk);}try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw Object.assign(Error('Invalid JSON'),{status:400});}}
 function field(value,max){if(typeof value!=='string'||!value.trim()||value.trim().length>max)throw Object.assign(Error('Please complete the required fields within the length limits.'),{status:400});return value.trim();}
-function publicUser(u){return {id:u.id,name:u.name,role:u.role};}
-function decorate(p){const u=db.users.find(u=>u.id===p.userId);return {...p,name:u.name,role:u.role,initials:u.name.split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase(),likes:p.likedBy.length,likedBy:undefined};}
+function publicUser(u){return {id:u.id,name:u.name,role:u.role,username:u.username};}
+function decorate(p){const u=db.users.find(u=>u.id===p.userId);return {...p,name:u.name,role:u.role,username:u.username,initials:u.name.split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase(),likes:p.likedBy.length,likedBy:undefined};}
 const attempts=new Map();
+const challenges=new Map();
+function username(value){const name=field(value,30).toLowerCase();if(!/^[a-z0-9_]{3,30}$/.test(name))throw Object.assign(Error('Username must be 3–30 letters, numbers, or underscores.'),{status:400});return name;}
+function rateLimit(req){const key=req.socket.remoteAddress;let a=attempts.get(key);if(!a||a.until<Date.now())a={count:0,until:Date.now()+3600000};attempts.set(key,a);return ++a.count<=60;}
+
 const uploadsDir=path.join(dataDir,'uploads');
 function uploadError(message){return Object.assign(Error(message),{status:400});}
 function parseUploads(files){
@@ -54,12 +58,32 @@ const server=http.createServer(async(req,res)=>{try{
    if(!req.headers['content-type']?.startsWith('application/json'))return json(res,415,{error:'JSON required'});
   }
   if(pathname==='/api/state'&&req.method==='GET')return json(res,200,{user:user?publicUser(user):null,projects:db.projects.map(decorate),likes:user?db.projects.filter(p=>p.likedBy.includes(user.id)).map(p=>p.id):[]});
-  if(pathname==='/api/demo-signup'&&req.method==='POST'){
-   const key=req.socket.remoteAddress;const a=attempts.get(key)||{count:0,until:Date.now()+3600000};if(a.until<Date.now()){a.count=0;a.until=Date.now()+3600000;}if(++a.count>30)return json(res,429,{error:'Too many demo accounts. Try again later.'});attempts.set(key,a);
-   const input=await body(req);if(input.mobileCode!=='123456'||input.emailCode!=='123456')return json(res,400,{error:'Use demo code 123456 in both fields.'});
-   const u={id:crypto.randomUUID(),name:field(input.name,70),role:'Finance professional'};db.users.push(u);const secret=crypto.randomBytes(32).toString('hex');db.sessions.push({tokenHash:crypto.createHash('sha256').update(secret).digest('hex'),userId:u.id,expires:Date.now()+7*86400000});await persist();res.setHeader('Set-Cookie',`finfolio_session=${secret}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV==='production'?'; Secure':''}`);return json(res,201,{user:publicUser(u)});
+  if(pathname==='/api/profiles'&&req.method==='GET'){
+   const query=(url.searchParams.get('username')||'').trim().replace(/^@/,'').toLowerCase().slice(0,30);
+   return json(res,200,{profiles:query?db.users.filter(u=>u.username.includes(query)).sort((a,b)=>Number(b.username===query)-Number(a.username===query)||a.username.localeCompare(b.username)).slice(0,30).map(publicUser):[]});
   }
-  if(pathname.startsWith('/api/profiles/')&&req.method==='GET'){const u=db.users.find(x=>x.id===pathname.split('/')[3]);return u?json(res,200,{user:publicUser(u),projects:db.projects.filter(p=>p.userId===u.id).map(decorate)}):json(res,404,{error:'Profile not found'});}
+  if(pathname==='/api/signup/start'&&req.method==='POST'){
+   if(!rateLimit(req))return json(res,429,{error:'Too many attempts. Try again later.'});
+   const input=await body(req);const email=field(input.email,254).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return json(res,400,{error:'Enter a valid email address.'});
+   for(const [id,c] of challenges)if(c.expires<Date.now())challenges.delete(id);
+   const challengeId=crypto.randomBytes(24).toString('hex');challenges.set(challengeId,{email,expires:Date.now()+10*60000,verified:false,attempts:0});
+   return json(res,201,{challengeId,demo:true});
+  }
+  if(pathname==='/api/signup/verify'&&req.method==='POST'){
+   const input=await body(req);const challenge=challenges.get(input.challengeId);
+   if(!challenge||challenge.expires<Date.now())return json(res,400,{error:'Verification expired. Start again with your email.'});
+   if(++challenge.attempts>5)return json(res,429,{error:'Too many OTP attempts. Start signup again.'});
+   if(input.emailCode!=='123456')return json(res,400,{error:'Use demo email code 123456.'});
+   challenge.verified=true;return json(res,200,{verified:true,demo:true});
+  }
+  if(pathname==='/api/demo-signup'&&req.method==='POST'){
+   const input=await body(req);const challenge=challenges.get(input.challengeId);
+   if(!challenge||!challenge.verified||challenge.expires<Date.now())return json(res,400,{error:'Complete email demo verification first.'});
+   const handle=username(input.username);if(db.users.some(u=>u.username===handle))return json(res,409,{error:'That username is taken. Choose another.'});
+   const u={id:crypto.randomUUID(),name:field(input.name,70),username:handle,role:'Finance professional'};db.users.push(u);challenges.delete(input.challengeId);
+   const secret=crypto.randomBytes(32).toString('hex');db.sessions.push({tokenHash:crypto.createHash('sha256').update(secret).digest('hex'),userId:u.id,expires:Date.now()+7*86400000});await persist();res.setHeader('Set-Cookie',`finfolio_session=${secret}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${process.env.NODE_ENV==='production'?'; Secure':''}`);return json(res,201,{user:publicUser(u)});
+  }
+  if(pathname.startsWith('/api/profiles/')&&req.method==='GET'){const u=db.users.find(x=>x.id===pathname.split('/')[3]||x.username===decodeURIComponent(pathname.split('/')[3]).toLowerCase());return u?json(res,200,{user:publicUser(u),projects:db.projects.filter(p=>p.userId===u.id).map(decorate)}):json(res,404,{error:'Profile not found'});}
   if(!user)return json(res,401,{error:'Create a demo profile to continue.'});
   if(pathname==='/api/profile'&&req.method==='PATCH'){const input=await body(req);const name=field(input.name,70),role=field(input.role,120);Object.assign(user,{name,role});await persist();return json(res,200,{user:publicUser(user)});}
   if(pathname==='/api/projects'&&req.method==='POST'){
@@ -75,4 +99,4 @@ const server=http.createServer(async(req,res)=>{try{
  }
  const name=pathname==='/'?'index.html':pathname.slice(1);if(!['index.html','app.js','style.css'].includes(name)){res.writeHead(404);return res.end('Not found');}const content=await fs.readFile(path.join(root,name));res.writeHead(200,{'Content-Type':name.endsWith('.css')?'text/css':name.endsWith('.js')?'text/javascript':'text/html; charset=utf-8'});res.end(content);
 }catch(e){console.error(e.message);json(res,e.status||500,{error:e.status?e.message:'Something went wrong. Please try again.'});}});
-(async()=>{await fs.mkdir(uploadsDir,{recursive:true});try{db=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;db={users:[],projects:[],sessions:[]};await persist();}server.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('FinFolio frontend and API listening on '+(process.env.PORT||3000)));})();
+(async()=>{await fs.mkdir(uploadsDir,{recursive:true});try{db=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;db={users:[],projects:[],sessions:[]};await persist();}const used=new Set(db.users.filter(u=>u.username).map(u=>u.username.toLowerCase()));let migrated=false;for(const u of db.users){if(u.username)continue;let base=u.name.toLowerCase().replace(/[^a-z0-9_]/g,'_').replace(/_+/g,'_').slice(0,22);if(base.length<3)base='member';let handle=base,index=1;while(used.has(handle))handle=base+'_'+index++;u.username=handle;used.add(handle);migrated=true;}if(migrated)await persist();server.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('FinFolio frontend and API listening on '+(process.env.PORT||3000)));})();
