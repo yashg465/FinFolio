@@ -8,15 +8,16 @@ Requires Node.js 24 (Docker pins this version).
 
 ```sh
 npm run check
+npm test
 npm start
 ```
 
-The app and API use port 3000, or `PORT`. `DATA_DIR` selects persistent storage (default `.data`). Profiles, projects, likes, and hashed session tokens are stored in an atomically replaced JSON file. Use one server instance; this storage is for a small demonstration, not production scaling. Back up the data directory. Do not expose or commit it.
+The app and API use port 3000, or `PORT`. `DATA_DIR` selects persistent storage (default `.data`). Profiles, projects, likes, attachment metadata, and hashed session tokens are stored in an atomically replaced JSON file. Uploaded file bytes live in `DATA_DIR/uploads`. Back up and retain the entire data directory together. Use one server instance; this storage is for a small demonstration, not production scaling. Back up the data directory. Do not expose or commit it.
 
 ## Test the app
 
 1. Create a demo profile. Use fictional mobile/email details and `123456` for both demo OTP fields. No SMS/email is sent, and contact details are not stored.
-2. Edit your name/headline and add a project with an optional HTTP/HTTPS resource link.
+2. Edit your name/headline and add a project with up to five supporting files and an optional HTTP/HTTPS resource link.
 3. Preview your portfolio and copy its profile link. Open that URL in a separate browser to verify public viewing. Project share links work across browsers too.
 4. The originating browser retains edit access through an HttpOnly, SameSite session cookie for seven days. There is no returning-user login or recovery yet; losing that session means losing edit access. Do not use this demo for real accounts or confidential material.
 5. Sample showcases remain illustrative; their attachments are not real documents. Sample likes are browser-local; real project likes are server-backed.
@@ -58,4 +59,16 @@ Writes require JSON and reject mismatched browser origins. Input lengths and res
 
 ## Before production
 
-Replace demo verification with real SMS/email OTP and rate limits, add login/recovery/logout, use a transactional database, add validated object-storage uploads, reporting/moderation, account deletion, and privacy controls. Set up monitoring, backups, abuse controls, and HTTPS. Only share material you own and can disclose. Fonts optionally load from Google Fonts with system fallbacks. Sample content is not investment advice.
+Replace demo verification with real SMS/email OTP and rate limits, add login/recovery/logout, use a transactional database, move uploads to scanned object storage, reporting/moderation, account deletion, and privacy controls. Set up monitoring, backups, abuse controls, and HTTPS. Only share material you own and can disclose. Fonts optionally load from Google Fonts with system fallbacks. Sample content is not investment advice.
+
+## Supporting files and the dark UI
+
+Projects accept up to **5 nonempty files, 8 MB each**, with a shared demo storage limit of 250 MB. Attach images, PDFs, presentations, spreadsheets, or other file types using the file picker; links remain optional. Remove any selected file before publishing. All attachments are visible to visitors who can access the project. Only upload work you can disclose.
+
+JPEG, PNG, GIF, and WebP images display inline. PDFs use the browser's PDF viewer where supported; every file also has a download action. Other formats, including HTML and SVG, download as binary attachments rather than executing inline. File names are displayed as escaped text; storage uses generated IDs. Preview MIME types are determined from file signatures, not the supplied extension. No malware scanning or document conversion is provided. This remains a demo; use trusted test files.
+
+A **Supporting files** section appears on each article and portfolio, including public profiles. Existing projects without files still work. Open a project, choose **View full** to expand the article over the current page, **View small** to shrink it, or **Back** / Escape to close it.
+
+The black theme includes a longer landing page, swipeable profile and project rails, navigation arrows, search, category filters, and responsive mobile layouts. Swipe horizontally on a touch device or use the arrow buttons with a mouse/keyboard.
+
+`npm test` exercises uploads, limits, safe HTML download handling, unauthorized writes, byte-for-byte image retrieval, and persistence across a server restart using isolated temporary data. Browser checks additionally covered file selection/removal, publishing, portfolio supporting files, full/small/back article controls, mobile filtering/search, and carousel navigation.
